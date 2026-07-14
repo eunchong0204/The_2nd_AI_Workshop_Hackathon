@@ -72,6 +72,7 @@ Download the FAERS quarterly ASCII zips from the
 and drop them in `data/raw/`, named `faers_ascii_<YYYY>q<Q>.zip` —
 for example `data/raw/faers_ascii_2024q1.zip`. Leave them zipped: Step 0 reads
 each archive directly.
+
 ---
 
 ## 2. Usage
