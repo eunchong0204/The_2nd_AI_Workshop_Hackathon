@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+
+# Large data & derived artifacts: raw FAERS zips, every derived table, the OpenFDA
+# label cache, and the embedding cache (which alone is ~850MB -- well past GitHub's
+# 100MB per-file hard limit).
+#
+# The one exception is data/raw/README.md, so the folder ships with the repo and
+# tells you what to download into it. Git cannot descend into an ignored directory,
+# so this has to be done step by step rather than with a blanket `data/`.
+data/*
+!data/raw/
+data/raw/*
+!data/raw/README.md
+
+# R environment. renv writes its own renv/.gitignore covering library/ + staging/,
+# so renv.lock, .Rprofile and renv/activate.R are all that get committed.

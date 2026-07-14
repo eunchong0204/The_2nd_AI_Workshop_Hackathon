@@ -1,0 +1,36 @@
+[project]
+name = "adr-llm"
+version = "0.1.0"
+description = "LLM classification of EBGM signals to surface novel, unlabeled ADRs (FAERS + OpenFDA)"
+requires-python = ">=3.11"
+dependencies = [
+    # One SDK for every provider: Ollama and any OpenAI frontier model both
+    # expose an OpenAI-compatible /chat/completions endpoint, so we only ever
+    # change base_url / api_key / model (see utils/config.py).
+    "openai>=1.40",
+    "requests>=2.31",   # OpenFDA REST API
+    "pandas>=2.0",      # read signals.csv / unique_pts.csv, write results
+    "numpy>=1.26",      # scoring maths in step4 / utils.embed / utils.validation
+    "python-dotenv>=1.0",
+    "tqdm>=4.66",       # progress bars over ~8k PTs / ~3.8k drugs
+    "matplotlib>=3.11.0",
+]
+
+# vLLM is a SERVER-side dependency: it runs only on the machine that serves the
+# model (a Linux + NVIDIA-GPU node such as Longleaf). The client code in adr_llm
+# talks to that server over HTTP and needs nothing but `openai`, so vLLM is
+# deliberately NOT a core dependency -- and it won't install on Windows, so it
+# must stay out of the default `uv sync`. Install it only where you serve:
+#   on the GPU node:  uv sync --group serve     (or simply: uv pip install vllm)
+[dependency-groups]
+# Installed by a plain `uv sync` -- uv treats `dev` as the default group.
+dev = [
+    "ipykernel>=7.3.0",   # run the notebooks from VS Code
+    "jupyterlab>=4.0",    # ...or from the CLI: uv run jupyter lab
+]
+serve = [
+    "vllm>=0.6",
+]
+
+[tool.uv]
+package = false
