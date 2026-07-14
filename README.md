@@ -23,8 +23,6 @@ disproportionately and that the drug's label **does not** mention.
 |---|---|
 | R | ≥ 4.4 (developed on 4.5.3) |
 | Python | 3.11 (pinned in `.python-version`) |
-| Disk | ~5 GB — FAERS zips ~600 MB, derived tables ~1.5 GB, embedding cache ~750 MB |
-| RAM | ~8 GB — Step 4 loads `pair_litref.csv` (≈490 MB) fully into memory |
 | Keys | an **OpenAI key** (always — see below) and an OpenFDA key (free) |
 
 ### 1a. R environment (`renv`)
@@ -123,10 +121,14 @@ blocked.
 ### Step 3 — compare against the FDA label (LLM)
 
 ```bash
-uv run python step3_compare_to_label.py                       # every drug
-uv run python step3_compare_to_label.py --drugs-csv drug_brands.csv
-uv run python step3_compare_to_label.py --drug "FEBUXOSTAT" --brand ULORIC
+uv run python step3_compare_to_label.py                                     # every drug
+uv run python step3_compare_to_label.py --drugs-csv drug_brands.csv         # many drugs, brand optional per row
+uv run python step3_compare_to_label.py --drug "FEBUXOSTAT" --brand ULORIC  # one drug, pinned to one brand
 ```
+
+`drug_brands.csv` needs a `prod_ai` column (the active ingredient) and an optional
+`brand` column pinning that drug to one product's label; a drug with no brand falls
+back to its ingredient-level label. Any other columns are ignored.
 
 Fetches each drug's OpenFDA label and assigns every candidate AE exactly one status:
 
