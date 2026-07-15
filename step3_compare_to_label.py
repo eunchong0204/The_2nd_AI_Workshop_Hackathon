@@ -5,8 +5,8 @@ model used in Step 2, then write the single table Step 4 scores:
   adr_results.csv  -> every AE + status; the validation set
 
 Status is a hierarchical per-AE call: (a) the drug's indication or the disease
-itself -- incl. progression / non-response -> disease_related; else (b) described
-anywhere on the label -> already_labeled; else (c) novel (a potential unlabeled ADR).
+itself -- incl. progression / non-response -> DISEASE_RELATED; else (b) described
+anywhere on the label -> ALREADY_LABELED; else (c) NOVEL (a potential unlabeled ADR).
 
 Resumable: (prod_ai, pt) pairs already in adr_results.csv are skipped.
 
@@ -38,30 +38,42 @@ from utils import config, openfda
 from utils.drugs import add_drug_args, resolve
 from utils.llm import chat_json
 
-VALID_STATUS = {"disease_related", "already_labeled", "novel"}
+VALID_STATUS = {"DISEASE_RELATED", "ALREADY_LABELED", "NOVEL"}
 _FIELDS = ["prod_ai", "pt", "n_reports", "EBGM", "QUANT_05", "status", "reasoning",
            "requested_brand", "label_brand", "label_manufacturer", "label_effective_time"]
 
 _SYSTEM = (
-    "You are a pharmacovigilance expert comparing candidate adverse events (AEs) "
-    "for ONE drug against that drug's official FDA label. The label text below is "
-    "provided as reference material and may include any of the drug's sections -- "
-    "indications, boxed warning, adverse reactions (narrative text and incidence "
-    "tables), warnings, precautions, and contraindications. Treat the ENTIRE label "
-    "as the source of truth; do not limit your search to any single section. For "
-    "each AE, make a hierarchical decision and assign exactly ONE status:\n"
-    "1. If the AE is really the drug's INDICATION, the underlying disease being "
+    "You are a senior pharmacovigilance expert comparing candidate PTs for one drug "
+    "against that drug's official FDA label.\n\n"
+    "Definitions:\n"
+    "- Adverse Drug Reaction (ADR): a noxious and unintended response for which a "
+    "causal relationship with the medicinal product is at least a reasonable "
+    "possibility.\n"
+    "- MedDRA Preferred Term (PT): one coded medical concept recorded in a FAERS "
+    "report.\n\n"
+    "Background:\n"
+    "The label text is provided as reference material and may include any of the "
+    "drug's sections -- indications, boxed warning, adverse reactions (narrative text "
+    "and incidence tables), warnings, precautions, and contraindications. Treat the "
+    "ENTIRE label as the source of truth; do not limit your search to any single "
+    "section.\n\n"
+    "Classification rules:\n"
+    "For each candidate PT, make a hierarchical decision and assign exactly ONE "
+    "status:\n"
+    "1. If the PT is really the drug's INDICATION, the underlying disease being "
     "treated, or that disease worsening / the drug failing to work (so it's "
-    "confounding or treatment failure, not a reaction) -> disease_related.\n"
-    "2. Else if the label describes the AE as something the drug can cause -- a "
-    "risk, warning, or adverse experience of taking it -- in ANY section -> "
-    "already_labeled. A bare mention is NOT enough: a condition named only as a "
-    "pre-existing risk factor or a contraindicated patient population (e.g. "
-    '"contraindicated in patients with hepatic impairment") is not '
-    "already_labeled.\n"
-    "3. Else -> novel (a potential unlabeled ADR).\n"
-    'Respond ONLY with JSON: {"results": [{"pt": "<verbatim>", "status": "<one status>", '
-    '"reasoning": "<one short sentence>"}]}. Include every AE once.'
+    "confounding or treatment failure, not a reaction) -> DISEASE_RELATED.\n"
+    "2. Else if the label describes the PT as something the drug can cause -- a risk, "
+    "warning, or adverse experience of taking it -- in ANY section -> ALREADY_LABELED. "
+    "A bare mention is NOT enough: a condition named only as a pre-existing risk "
+    "factor or a contraindicated patient population (e.g. \"contraindicated in "
+    "patients with hepatic impairment\") is not ALREADY_LABELED.\n"
+    "3. Else -> NOVEL (a potential unlabeled ADR).\n\n"
+    "Respond only with valid JSON in this exact structure:\n"
+    '{"results":[{"pt":"<verbatim>","status":"<DISEASE_RELATED|ALREADY_LABELED|NOVEL>",'
+    '"reasoning":"<one short sentence>"}]}\n'
+    "Do not include Markdown, comments, additional keys, the label text, or any text "
+    "outside the JSON."
 )
 
 
@@ -94,17 +106,11 @@ def load_signals(use_blocklist: bool, drugs: list[str] | None) -> pd.DataFrame:
 
 def build_user_prompt(drug: str, label: dict, pts: list[dict]) -> str:
     label_text = openfda.label_to_text(label) or "(no label sections available)"
-    ae_lines = "\n".join(f"{i}. {r['pt']}" for i, r in enumerate(pts, 1))
+    pt_lines = "\n".join(f"{i}. {r['pt']}" for i, r in enumerate(pts, 1))
     return (
         f"DRUG (active ingredient): {drug}\n\n"
-        f"=== FDA LABEL ===\n{label_text}\n\n"
-        f"=== CANDIDATE ADVERSE EVENTS ===\n{ae_lines}\n\n"
-        f"Classify all {len(pts)} adverse events listed above. Respond with ONE JSON "
-        f'object whose only key is "results": a list of exactly {len(pts)} objects, '
-        'one per AE, each shaped {"pt": "<verbatim AE text>", "status": '
-        '"<disease_related|already_labeled|novel>", '
-        '"reasoning": "<one short sentence>"}. '
-        "Do not output any other keys and do not echo the label."
+        f"FDA LABEL:\n{label_text}\n\n"
+        f"Classify the following {len(pts)} PTs:\n{pt_lines}"
     )
 
 
@@ -121,7 +127,7 @@ def classify_drug(drug: str, rows: list[dict], batch_size: int,
     if not label.get("found"):
         # No SPL to compare against -- record so it's accounted for, but these
         # are not eligible for the novel shortlist (can't confirm "unlabeled").
-        return [dict(r, status="no_label", reasoning="no OpenFDA label found", **meta)
+        return [dict(r, status="NO_LABEL", reasoning="no OpenFDA label found", **meta)
                 for r in rows]
 
     results: list[dict] = []
@@ -130,7 +136,7 @@ def classify_drug(drug: str, rows: list[dict], batch_size: int,
         data = chat_json(_SYSTEM, build_user_prompt(drug, label, batch), max_tokens=8192)
         # Small models sometimes ignore the schema and return a dict with no
         # "results" key (or a list of bare strings). Default to an empty list and
-        # keep only dict entries so a malformed reply degrades to "novel" for the
+        # keep only dict entries so a malformed reply degrades to "NOVEL" for the
         # whole batch instead of raising -- Step 3 stays resumable/robust.
         parsed = data.get("results", []) if isinstance(data, dict) else data
         if not isinstance(parsed, list):
@@ -138,9 +144,11 @@ def classify_drug(drug: str, rows: list[dict], batch_size: int,
         by_pt = {str(p.get("pt", "")).strip(): p for p in parsed if isinstance(p, dict)}
         for r in batch:
             hit = by_pt.get(r["pt"], {})
-            status = hit.get("status", "novel")
+            # normalise case/spacing so a lowercase or spaced reply still maps to a
+            # canonical status instead of silently collapsing to the fallback.
+            status = str(hit.get("status", "NOVEL")).strip().upper().replace(" ", "_")
             if status not in VALID_STATUS:
-                status = "novel"
+                status = "NOVEL"
             results.append(dict(r, status=status, reasoning=hit.get("reasoning", ""), **meta))
     return results
 
@@ -199,8 +207,8 @@ def main() -> None:
 
     print(f"\nWrote {config.ADR_RESULTS_CSV} ({len(res)} rows)")
     print(counts.to_string())
-    print(f"\nNovel candidate ADRs: {int(counts.get('novel', 0))} "
-          '(status == "novel", rank by EBGM)')
+    print(f"\nNovel candidate ADRs: {int(counts.get('NOVEL', 0))} "
+          '(status == "NOVEL", rank by EBGM)')
 
 
 if __name__ == "__main__":

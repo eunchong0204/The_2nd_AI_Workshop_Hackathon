@@ -52,6 +52,7 @@ scores <- ebScores(processed, hyper, quantiles = c(5, 95), digits = 2)
 ebgm_scores <- scores$data %>%
   rename(prod_ai = var1, pt = var2, n_reports = N) %>%
   arrange(desc(EBGM))
+#write_csv(ebgm_scores, file.path(processed_dir, "ebgm_scores.csv"))
 
 
 ###################################

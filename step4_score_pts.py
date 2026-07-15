@@ -162,8 +162,8 @@ def score_drug(
 ) -> tuple[pd.DataFrame, dict]:
     """Score and rank ONE drug's candidate PTs.
 
-    `df` must have `pt` and `status` columns (status in {novel, already_labeled,
-    disease_related, ...}); EBGM etc. are pulled from signals.csv regardless.
+    `df` must have `pt` and `status` columns (status in {NOVEL, ALREADY_LABELED,
+    DISEASE_RELATED, ...}); EBGM etc. are pulled from signals.csv regardless.
 
     Returns (scored_df sorted best-first, summary dict). The scored frame carries
     the raw feature values, the five normalised [0,1] components, `final_score`,
@@ -186,7 +186,7 @@ def score_drug(
     d["severity_by"] = [SEVERITY_ANCHORS[i] for i in sev.argmax(axis=1)]  # which anchor won
 
     # biological plausibility: cosine to the NEAREST anchor (max) in the pool of {all labeled PTs} + {the indication}. 
-    labeled = (d["status"].astype(str) == "already_labeled").to_numpy()
+    labeled = (d["status"].astype(str).str.upper() == "ALREADY_LABELED").to_numpy()
     n_lab = int(labeled.sum())
     if n_lab >= 2:
         sims = pt_vecs @ pt_vecs[labeled].T          # (n, n_lab) cosine PT<->each labeled PT

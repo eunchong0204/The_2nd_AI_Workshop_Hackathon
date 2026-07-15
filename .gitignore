@@ -6,6 +6,9 @@
 __pycache__/
 *.pyc
 
+# Office temp lock files (created while a document is open)
+~$*
+
 # Large data & derived artifacts: raw FAERS zips, every derived table, the OpenFDA
 # label cache, and the embedding cache (which alone is ~850MB -- well past GitHub's
 # 100MB per-file hard limit).

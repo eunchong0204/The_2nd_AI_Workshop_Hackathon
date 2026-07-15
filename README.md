@@ -5,13 +5,14 @@ pharmacovigilance statistics with an LLM stage:
 
 1. **R / MGPS** — mine FAERS for drug–AE pairs that are reported far more often than
    chance (EBGM disproportionality).
-2. **Python / LLM** — throw away the pairs that aren't real clinical events, check each
-   survivor against the drug's official FDA label, and rank whatever is left over.
+2. **Python / LLM** — throw away the pairs that aren't plausible drug reactions, check each
+   survivor against the drug's official FDA label, and rank the unlabeled ones by how
+   strongly the evidence points to a genuine reaction.
 
-The output is a per-drug shortlist: adverse events that FAERS reports
+The output is a per-drug ranked shortlist: adverse events that FAERS reports
 disproportionately and that the drug's label **does not** mention.
 
-📊 **[Analysis report → `analysis_report.ipynb`](analysis_report.ipynb)** — methods, results, and validation.
+📊 **[Analysis report → `analysis_report.ipynb`](analysis_report.ipynb)** — Intro, Methods, Results, and Validation.
 
 ---
 
@@ -52,7 +53,7 @@ Edit these:
 | `LLM_PROVIDER` | `ollama` (local, free) or `openai`. Used by **both** Step 2 and Step 3. |
 | `LLM_MODEL` | override the per-provider default (`llama3.1:8b` / `gpt-4o-mini`) |
 | `OPENAI_API_KEY` | **required regardless of `LLM_PROVIDER`** — see the note below |
-| `OPENFDA_API_KEY` | free key from [open.fda.gov](https://open.fda.gov/apis/authentication/). Without one you're capped. |
+| `OPENFDA_API_KEY` | free key from [open.fda.gov](https://open.fda.gov/apis/authentication/). |
 
 > **The OpenAI key is not optional.** Step 4's embeddings always go to OpenAI, so you need `OPENAI_API_KEY` even when `LLM_PROVIDER=ollama`.
 
@@ -67,9 +68,8 @@ ollama serve
 
 Download the FAERS quarterly ASCII zips from the
 [FDA FAERS page](https://fis.fda.gov/extensions/FPD-QDE-FAERS/FPD-QDE-FAERS.html)
-and drop them in `data/raw/`, named `faers_ascii_<YYYY>q<Q>.zip` —
-for example `data/raw/faers_ascii_2024q1.zip`. Leave them zipped: Step 0 reads
-each archive directly.
+and drop them in `data/raw/`, named `faers_ascii_<YYYY>q<Q>.zip` — 
+Leave them zipped: Step 0 reads each file directly.
 
 ---
 
@@ -85,7 +85,7 @@ Rscript step0_process_data.R
 
 Stacks every quarter in `data/raw/`, keeps the latest version of each case, filters to
 primary/secondary suspect drugs, drops bulk reports (> 10 suspect drugs), and pairs
-every suspect drug with every reaction on the report.
+every suspect drug with every event on the report.
 
 → `drug_reac_pairs.csv` · `pair_features.csv` · `pair_litref.csv`
 
@@ -99,11 +99,7 @@ Fits the MGPS model with `openEBGM` and keeps the pairs that survive **N ≥ 5 a
 
 → `signals.csv` · `unique_pts.csv`
 
-```bash
-Rscript step1_run_sensitivity.R    # optional: fit diagnostic, writes nothing
-```
-
-### Step 2 — drop the PTs that aren't clinical events (LLM)
+### Step 2 — drop the PTs that aren't plausible drug reactions (LLM)
 
 ```bash
 uv run python step2_classify_pts.py                  # full run
@@ -123,7 +119,7 @@ blocked.
 ```bash
 uv run python step3_compare_to_label.py                                     # every drug
 uv run python step3_compare_to_label.py --drugs-csv drug_brands.csv         # many drugs, brand optional per row
-uv run python step3_compare_to_label.py --drug "FEBUXOSTAT" --brand ULORIC  # one drug, pinned to one brand
+uv run python step3_compare_to_label.py --drug "FEBUXOSTAT" --brand ULORIC  # one drug, pinned to one brand (optional)
 ```
 
 `drug_brands.csv` needs a `prod_ai` column (the active ingredient) and an optional
@@ -134,12 +130,12 @@ Fetches each drug's OpenFDA label and assigns every candidate AE exactly one sta
 
 | status | meaning |
 |---|---|
-| `disease_related` | the indication, the underlying disease, or it worsening — a confound, not a reaction |
-| `already_labeled` | the label describes the drug as causing it |
-| `novel` | **neither → a potential unlabeled ADR** |
-| `no_label` | no OpenFDA label found; not eligible for the shortlist |
+| `DISEASE_RELATED` | the indication, the underlying disease, or it worsening |
+| `ALREADY_LABELED` | the label describes the drug as causing it |
+| `NOVEL` | **neither → a potential unlabeled ADR** |
+| `NO_LABEL` | no OpenFDA label found; not eligible for the shortlist |
 
-→ `adr_results.csv` (every AE + status)
+→ `adr_results.csv`
 
 ### Step 4 — score and rank (embeddings)
 
@@ -149,7 +145,7 @@ uv run python step4_score_pts.py --drugs-csv drug_brands.csv
 uv run python step4_score_pts.py --drug "FEBUXOSTAT" --brand ULORIC --out my_ranking.csv
 ```
 
-Scores each candidate AE on five components, each normalised to [0, 1] and combined by a weighted
+Scores each candidate AE on five components, each normalised to [0, 1] and combined by a equally weighted
 sum:
 
 | component | what it measures |
@@ -158,7 +154,7 @@ sum:
 | `literature` | similarity to papers cited on the reports |
 | `severity` | closeness to a fatal outcome |
 | `plausibility` | biological relatedness to what the drug already does |
-| `low_confounding` | fewer suspect drugs on the report = cleaner attribution |
+| `low_confounding` | fewer other suspect drugs on the report (less potention confounding) |
 
 > **Ranking is per drug.** `final_score` is min-max normalised *within* each drug
 > Filter to one drug, then read its ranking.
@@ -170,13 +166,13 @@ sum:
 ```python
 import pandas as pd
 
-scored = pd.read_csv("data/processed/scored_adrs.csv")
+scored = pd.read_csv("data/processed/my_ranking.csv")
 
 # ranking is per drug -- always filter to ONE drug first
 one = scored[scored.prod_ai == "FEBUXOSTAT"].sort_values("rank")
 
 # the shortlist: unlabeled AEs for this drug, best first
-one[one.status == "novel"][
+one[one.status == "NOVEL"][
     ["rank", "pt", "final_score", "dispro", "literature",
      "severity", "plausibility", "low_confounding"]
 ].head(10)
@@ -188,8 +184,8 @@ one[one.status == "novel"][
 
 ```
 .
-├── data/                       # (local) nothing here is in the repo
-│   ├── raw/                    # FAERS quarterly zips -- you download these
+├── data/                       
+│   ├── raw/                    # FAERS quarterly zips
 │   ├── processed/              # every derived table (steps 0-4 write here)
 │   ├── labels/                 # OpenFDA label cache, one JSON per drug
 │   └── embeddings/             # embedding cache, keyed by model
@@ -222,7 +218,7 @@ one[one.status == "novel"][
 ├── uv.lock
 ├── .python-version
 │
-├── drug_brands.csv             # curated drug -> brand map for 100 drug-brand analysis
+├── drug_brands.csv
 ├── analysis_report.ipynb
 └── .env.example
 ```

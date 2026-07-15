@@ -38,23 +38,37 @@ MAX_ATTEMPTS = int(config._env("OPENFDA_MAX_ATTEMPTS", "10") or "10")
 _BACKOFF = 3   # seconds, multiplied by the attempt number -> 3, 6, 9, ... ~2 min total
 
 # Label sections kept. 
-# Each *_table field is the SPL's HTML incidence table for the section above it, flattened to text by
-# _html_to_text() -- an AE can appear only in the table, never the narrative.
+# Each *_table field is the SPL's HTML incidence table for the section above it, flattened to text by _html_to_text()
+# For initial testing, please keep or remove sections or cap the section lengths to a reasonable amount.
 _SECTIONS = {
-    "indications_and_usage": 4000,
-    "boxed_warning": 6000,
-    "adverse_reactions": 20000,
-    "adverse_reactions_table": 10000,
-    "warnings_and_cautions": 16000,
-    "warnings_and_precautions": 16000,
-    "warnings_and_cautions_table": 4000,
-    "warnings": 16000,
-    "warnings_table": 4000,
-    "precautions": 12000,
-    "stop_use": 1000,
-    "contraindications": 3000,
+    "indications_and_usage": 50000,
+    "boxed_warning": 50000,
+    "adverse_reactions": 50000,
+    "adverse_reactions_table": 50000,
+    "warnings_and_cautions": 50000,
+    "warnings_and_precautions": 50000,
+    "warnings_and_cautions_table": 50000,
+    "warnings": 50000,
+    "warnings_table": 50000,
+    "precautions": 50000,
+    "stop_use": 50000,
+    "contraindications": 50000,
 }
 
+# _SECTIONS = {
+#     "indications_and_usage": 4000,
+#     "boxed_warning": 6000,
+#     "adverse_reactions": 20000,
+#     "adverse_reactions_table": 10000,
+#     "warnings_and_cautions": 16000,
+#     "warnings_and_precautions": 16000,
+#     "warnings_and_cautions_table": 4000,
+#     "warnings": 16000,
+#     "warnings_table": 4000,
+#     "precautions": 12000,
+#     "stop_use": 1000,
+#     "contraindications": 3000,
+# }
 
 ############
 # 2. Helpers
@@ -163,7 +177,7 @@ def _extract(result: dict) -> dict:
         text = text.strip()
         if text:
             # Say so when a section is cut: the dropped tail is risk text the model
-            # never sees, and an AE described only there comes back a false "novel".
+            # never sees, and an AE described only there comes back a false "NOVEL".
             if len(text) > budget:
                 print(f"[openfda] truncated {field}: {len(text):,} -> {budget:,} chars")
             sections[field] = text[:budget]
