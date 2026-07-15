@@ -1,4 +1,5 @@
-# Novel ADR detection from FAERS
+# LLM-assisted pharmacovigilance pipeline
+## prioritizing potentially unlabeled adverse drug reactions from FAERS
 
 Surfaces **novel, unlabeled adverse drug reactions** by combining classical
 pharmacovigilance statistics with an LLM stage:
